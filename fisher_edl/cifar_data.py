@@ -30,7 +30,7 @@ def build_cifar10_loaders(
     batch_size=128,
     data_root="./data",
     num_workers=2,
-    val_split=0.2,
+    val_split=0.1,
     seed=1234,
 ):
     train_transform = transforms.Compose(

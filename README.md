@@ -6,7 +6,7 @@ It includes a baseline EDL loss and a Fisher-adaptive variant.
 
 ## CIFAR-10 / OOD Experiments
 
-Train on CIFAR-10 (Known), evaluate Far-OOD on SVHN and Near-OOD on CIFAR-100.
+Train on CIFAR-10 (Known). OOD evaluation is done separately via `run_cifar_eval.py`.
 
 ```
 python run_cifar_experiment.py --method edl --beta 1.0
@@ -17,8 +17,7 @@ python run_cifar_experiment.py --method fisher --beta 1.0 --gamma 1.0
 ```
 
 The script logs CSV metrics to `runs/cifar_<method>_<timestamp>/metrics.csv`,
-including AUROC for OOD detection (SVHN vs CIFAR-10, CIFAR-100 vs CIFAR-10)
-using evidential uncertainty as the score.
+including ID validation accuracy and uncertainty.
 
 Backbone selection:
 
@@ -62,8 +61,7 @@ wandb agent <entity>/<project>/<sweep_id>
 ```
 
 By default, 10% of CIFAR-10 train is held out for validation and logged as
-`val_acc` during training. Test accuracy is logged as `test_acc`. Control the
-split with `--val-split` (set to 0 to disable).
+`val_acc` during training. Set `--val-split 0` to disable validation logging.
 
 Enable Weights & Biases logging:
 

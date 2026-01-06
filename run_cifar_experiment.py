@@ -3,11 +3,7 @@ import datetime
 import os
 import torch
 
-from fisher_edl.cifar_data import (
-    build_cifar10_loaders,
-    build_svhn_loader,
-    build_cifar100_loader,
-)
+from fisher_edl.cifar_data import build_cifar10_loaders
 from fisher_edl.cifar_model import build_cifar_model
 from fisher_edl.train_cifar import CifarTrainConfig, train_cifar
 
@@ -50,18 +46,7 @@ def main():
         val_split=args.val_split,
         seed=args.seed,
     )
-    svhn_loader = build_svhn_loader(
-        batch_size=args.batch_size,
-        data_root=args.data_root,
-        num_workers=args.num_workers,
-        transform=test_transform,
-    )
-    cifar100_loader = build_cifar100_loader(
-        batch_size=args.batch_size,
-        data_root=args.data_root,
-        num_workers=args.num_workers,
-        transform=test_transform,
-    )
+    _ = test_transform
 
     model = build_cifar_model(backbone=args.backbone, num_classes=10)
 
@@ -90,16 +75,10 @@ def main():
     )
 
     print(f"Running {args.method} on {device}. logs -> {run_dir}")
-    if val_loader is None:
-        val_loader = test_loader
-
     train_cifar(
         model,
         train_loader,
         val_loader,
-        test_loader,
-        svhn_loader,
-        cifar100_loader,
         num_classes=10,
         cfg=cfg,
         run_dir=run_dir,
