@@ -5,9 +5,9 @@ metric:
   goal: maximize
 parameters:
   method:
-    values: [fisher]
+    values: [edl, fisher]
   backbone:
-    values: [simple]
+    values: [simple, resnet18]
   beta:
     values: [1.0, 0.5, 0.1, 0.01]
   gamma:

@@ -30,7 +30,18 @@ def _train_epoch(model, loader, num_classes, cfg, optimizer):
     epoch_loss = 0.0
     epoch_risk = 0.0
     epoch_kl = 0.0
+    epoch_kl_weighted = 0.0
     epoch_weight = 0.0
+    epoch_lambda_min = 0.0
+    epoch_lambda_max = 0.0
+    epoch_fisher_trace = 0.0
+    epoch_uncertainty = 0.0
+    epoch_evidence_sum = 0.0
+    epoch_uncertainty_correct = 0.0
+    epoch_uncertainty_wrong = 0.0
+    count_correct = 0
+    count_wrong = 0
+    epoch_grad_norm = 0.0
     correct = 0
     total = 0
 
@@ -43,34 +54,84 @@ def _train_epoch(model, loader, num_classes, cfg, optimizer):
         if cfg.method == "fisher":
             loss, stats = fisher_edl_mse_loss(logits, targets, beta=cfg.beta, gamma=cfg.gamma)
             epoch_weight += stats["weight"]
+            epoch_lambda_min += stats["lambda_min"]
+            epoch_lambda_max += stats["lambda_max"]
+            epoch_fisher_trace += stats["fisher_trace"]
         else:
             loss, stats = edl_mse_loss(logits, targets, kl_weight=cfg.beta)
             epoch_weight += cfg.beta
+            epoch_lambda_min += float("nan")
+            epoch_lambda_max += float("nan")
+            epoch_fisher_trace += float("nan")
 
         optimizer.zero_grad()
         loss.backward()
+        grad_sq = 0.0
+        for param in model.parameters():
+            if param.grad is not None:
+                grad_sq += param.grad.detach().data.norm(2).item() ** 2
+        epoch_grad_norm += grad_sq ** 0.5
         optimizer.step()
 
         epoch_loss += loss.item()
         epoch_risk += stats["risk"]
         epoch_kl += stats["kl"]
+        epoch_kl_weighted += stats["kl_weighted"]
 
         with torch.no_grad():
             preds = torch.argmax(F.softmax(logits, dim=1), dim=1)
-            correct += (preds == labels).sum().item()
+            correct_mask = preds == labels
+            wrong_mask = ~correct_mask
+            correct += correct_mask.sum().item()
             total += labels.size(0)
+
+            uncertainty = uncertainty_from_logits(logits)
+            evidence = F.softplus(logits)
+            alpha = evidence + 1.0
+            evidence_sum = alpha.sum(dim=1) - num_classes
+
+            epoch_uncertainty += uncertainty.mean().item()
+            epoch_evidence_sum += evidence_sum.mean().item()
+            if correct_mask.any():
+                epoch_uncertainty_correct += uncertainty[correct_mask].sum().item()
+                count_correct += correct_mask.sum().item()
+            if wrong_mask.any():
+                epoch_uncertainty_wrong += uncertainty[wrong_mask].sum().item()
+                count_wrong += wrong_mask.sum().item()
 
     mean_loss = epoch_loss / max(1, len(loader))
     mean_risk = epoch_risk / max(1, len(loader))
     mean_kl = epoch_kl / max(1, len(loader))
+    mean_kl_weighted = epoch_kl_weighted / max(1, len(loader))
     mean_weight = epoch_weight / max(1, len(loader))
+    mean_lambda_min = epoch_lambda_min / max(1, len(loader))
+    mean_lambda_max = epoch_lambda_max / max(1, len(loader))
+    mean_fisher_trace = epoch_fisher_trace / max(1, len(loader))
+    mean_uncertainty = epoch_uncertainty / max(1, len(loader))
+    mean_evidence_sum = epoch_evidence_sum / max(1, len(loader))
+    mean_uncertainty_correct = (
+        epoch_uncertainty_correct / count_correct if count_correct > 0 else float("nan")
+    )
+    mean_uncertainty_wrong = (
+        epoch_uncertainty_wrong / count_wrong if count_wrong > 0 else float("nan")
+    )
+    mean_grad_norm = epoch_grad_norm / max(1, len(loader))
     acc = correct / max(1, total)
 
     return {
         "loss": mean_loss,
         "risk": mean_risk,
         "kl": mean_kl,
+        "kl_weighted": mean_kl_weighted,
         "weight": mean_weight,
+        "lambda_min": mean_lambda_min,
+        "lambda_max": mean_lambda_max,
+        "fisher_trace": mean_fisher_trace,
+        "uncertainty_mean": mean_uncertainty,
+        "evidence_sum": mean_evidence_sum,
+        "uncertainty_correct": mean_uncertainty_correct,
+        "uncertainty_wrong": mean_uncertainty_wrong,
+        "grad_norm": mean_grad_norm,
         "acc": acc,
     }
 
@@ -193,10 +254,19 @@ def train_cifar(
             wandb_run.log(
                 {
                     "epoch": epoch,
-                    "loss": train_stats["loss"],
-                    "risk": train_stats["risk"],
-                    "kl": train_stats["kl"],
-                    "weight": train_stats["weight"],
+                    "Loss/Total": train_stats["loss"],
+                    "Loss/Risk": train_stats["risk"],
+                    "Loss/KL_raw": train_stats["kl"],
+                    "Loss/KL_weighted": train_stats["kl_weighted"],
+                    "Metric/Fisher_Trace": train_stats["fisher_trace"],
+                    "Metric/Lambda_Mean": train_stats["weight"],
+                    "Metric/Lambda_Min": train_stats["lambda_min"],
+                    "Metric/Lambda_Max": train_stats["lambda_max"],
+                    "Uncertainty/Train_Mean": train_stats["uncertainty_mean"],
+                    "Uncertainty/Correct": train_stats["uncertainty_correct"],
+                    "Uncertainty/Wrong": train_stats["uncertainty_wrong"],
+                    "Evidence/Total_Sum": train_stats["evidence_sum"],
+                    "System/Gradient_Norm": train_stats["grad_norm"],
                     "train_acc": train_stats["acc"],
                     "val_acc": val_acc,
                     "val_uncertainty": val_unc,
