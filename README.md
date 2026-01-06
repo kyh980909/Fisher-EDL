@@ -1,4 +1,4 @@
-# Fisher-EDL Toy Experiments
+# Fisher-EDL Experiments
 
 This repo provides a minimal, self-contained experiment harness to test
 Fisher-Weighted Evidential Loss on a synthetic 2D classification task.
