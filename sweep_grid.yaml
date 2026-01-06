@@ -1,0 +1,26 @@
+program: run_cifar_experiment.py
+method: grid
+metric:
+  name: cifar100_auroc_test
+  goal: maximize
+parameters:
+  method:
+    values: [fisher]
+  backbone:
+    values: [simple]
+  beta:
+    values: [1.0, 0.5, 0.1, 0.01]
+  gamma:
+    values: [0.5, 1.0, 1.5, 2.0]
+  epochs:
+    value: 100
+  batch_size:
+    value: 128
+  val_split:
+    value: 0.1
+command:
+  - ${env}
+  - python
+  - ${program}
+  - ${args}
+  - --wandb

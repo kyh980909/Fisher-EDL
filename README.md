@@ -48,6 +48,19 @@ Colab notebook:
 
 - `colab_fisher_edl.ipynb`
 
+Hyperparameter sweep (grid):
+
+```
+python run_cifar_sweep.py --method fisher --betas 1.0,0.3,0.1 --gammas 0.5,1.0,2.0
+```
+
+W&B sweep (grid):
+
+```
+wandb sweep sweep_grid.yaml
+wandb agent <entity>/<project>/<sweep_id>
+```
+
 By default, 10% of CIFAR-10 train is held out for validation and logged as
 `val_acc` during training. Test accuracy is logged as `test_acc`. Control the
 split with `--val-split` (set to 0 to disable).

@@ -7,7 +7,7 @@ import torch
 import torch.nn.functional as F
 
 from fisher_edl.cifar_data import one_hot
-from fisher_edl.losses import edl_mse_loss, fisher_edl_mse_loss
+from fisher_edl.losses import edl_mse_loss, fisher_edl_mse_loss, fisher_weight
 from fisher_edl.metrics import uncertainty_from_logits, compute_auroc
 
 
@@ -80,6 +80,7 @@ def _eval_id(model, loader, cfg):
     correct = 0
     total = 0
     uncertainties = []
+    weights = []
 
     with torch.no_grad():
         for images, labels in loader:
@@ -90,24 +91,35 @@ def _eval_id(model, loader, cfg):
             correct += (preds == labels).sum().item()
             total += labels.size(0)
             uncertainties.append(uncertainty_from_logits(logits))
+            if cfg.method == "fisher":
+                evidence = F.softplus(logits)
+                alpha = evidence + 1.0
+                weights.append(fisher_weight(alpha))
 
     acc = correct / max(1, total)
     mean_unc = torch.cat(uncertainties).mean().item()
-    return acc, mean_unc, torch.cat(uncertainties)
+    mean_weight = torch.cat(weights).mean().item() if weights else float("nan")
+    return acc, mean_unc, mean_weight, torch.cat(uncertainties)
 
 
 def _eval_ood(model, loader, cfg):
     model.eval()
     uncertainties = []
+    weights = []
 
     with torch.no_grad():
         for images, _ in loader:
             images = images.to(cfg.device)
             logits = model(images)
             uncertainties.append(uncertainty_from_logits(logits))
+            if cfg.method == "fisher":
+                evidence = F.softplus(logits)
+                alpha = evidence + 1.0
+                weights.append(fisher_weight(alpha))
 
     mean_unc = torch.cat(uncertainties).mean().item()
-    return mean_unc, torch.cat(uncertainties)
+    mean_weight = torch.cat(weights).mean().item() if weights else float("nan")
+    return mean_unc, mean_weight, torch.cat(uncertainties)
 
 
 def train_cifar(
@@ -160,10 +172,14 @@ def train_cifar(
             "train_acc",
             "val_acc",
             "val_uncertainty",
+            "val_fisher_weight",
             "test_acc",
             "test_uncertainty",
+            "test_fisher_weight",
             "svhn_uncertainty",
+            "svhn_fisher_weight",
             "cifar100_uncertainty",
+            "cifar100_fisher_weight",
             "svhn_auroc_val",
             "cifar100_auroc_val",
             "svhn_auroc_test",
@@ -175,10 +191,10 @@ def train_cifar(
 
     for epoch in range(1, cfg.epochs + 1):
         train_stats = _train_epoch(model, train_loader, num_classes, cfg, optimizer)
-        val_acc, val_unc, val_scores = _eval_id(model, val_loader, cfg)
-        test_acc, test_unc, test_scores = _eval_id(model, test_loader, cfg)
-        svhn_unc, svhn_scores = _eval_ood(model, svhn_loader, cfg)
-        cifar100_unc, cifar100_scores = _eval_ood(model, cifar100_loader, cfg)
+        val_acc, val_unc, val_weight, val_scores = _eval_id(model, val_loader, cfg)
+        test_acc, test_unc, test_weight, test_scores = _eval_id(model, test_loader, cfg)
+        svhn_unc, svhn_weight, svhn_scores = _eval_ood(model, svhn_loader, cfg)
+        cifar100_unc, cifar100_weight, cifar100_scores = _eval_ood(model, cifar100_loader, cfg)
 
         svhn_labels = torch.ones_like(svhn_scores)
         val_labels = torch.zeros_like(val_scores)
@@ -223,10 +239,14 @@ def train_cifar(
                     "train_acc": train_stats["acc"],
                     "val_acc": val_acc,
                     "val_uncertainty": val_unc,
+                    "val_fisher_weight": val_weight,
                     "test_acc": test_acc,
                     "test_uncertainty": test_unc,
+                    "test_fisher_weight": test_weight,
                     "svhn_uncertainty": svhn_unc,
+                    "svhn_fisher_weight": svhn_weight,
                     "cifar100_uncertainty": cifar100_unc,
+                    "cifar100_fisher_weight": cifar100_weight,
                     "svhn_auroc_val": svhn_auroc_val,
                     "cifar100_auroc_val": cifar100_auroc_val,
                     "svhn_auroc_test": svhn_auroc_test,
@@ -244,10 +264,14 @@ def train_cifar(
                 f"{train_stats['acc']:.6f}",
                 f"{val_acc:.6f}",
                 f"{val_unc:.6f}",
+                f"{val_weight:.6f}",
                 f"{test_acc:.6f}",
                 f"{test_unc:.6f}",
+                f"{test_weight:.6f}",
                 f"{svhn_unc:.6f}",
+                f"{svhn_weight:.6f}",
                 f"{cifar100_unc:.6f}",
+                f"{cifar100_weight:.6f}",
                 f"{svhn_auroc_val:.6f}",
                 f"{cifar100_auroc_val:.6f}",
                 f"{svhn_auroc_test:.6f}",
