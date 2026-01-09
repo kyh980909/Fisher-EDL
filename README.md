@@ -43,6 +43,18 @@ Log eval metrics to W&B:
 python run_cifar_eval.py --ckpt runs/cifar_fisher_YYYYMMDD_HHMMSS/best_val_acc.pt --wandb --wandb-project fisher-edl
 ```
 
+Save uncertainty histograms (ID vs OOD):
+
+```
+python run_cifar_eval.py --ckpt runs/cifar_fisher_YYYYMMDD_HHMMSS/best_val_acc.pt --hist-out runs/uncertainty_hist.csv
+```
+
+Save uncertainty histograms as PNG:
+
+```
+python run_cifar_eval.py --ckpt runs/cifar_fisher_YYYYMMDD_HHMMSS/best_val_acc.pt --hist-png runs/uncertainty_hist.png
+```
+
 Colab notebook:
 
 - `colab_fisher_edl.ipynb`
@@ -58,6 +70,30 @@ W&B sweep (grid):
 ```
 wandb sweep sweep_grid.yaml
 wandb agent <entity>/<project>/<sweep_id>
+```
+
+Analyze W&B runs for collapse:
+
+```
+python scripts/report_wandb_runs.py --wandb-dir wandb --uncertainty-threshold 0.9 --out-csv results/wandb_summary.csv --out-md results/wandb_summary.md
+```
+
+Evaluate best runs (by val_acc):
+
+```
+python scripts/eval_best_runs.py --runs-dir runs --method all --top-k 3 --out-csv results/best_eval
+```
+
+Evaluate all runs (best_val_acc checkpoints):
+
+```
+python scripts/eval_all_runs.py --runs-dir runs --out-dir results/all_eval --skip-existing
+```
+
+Backfill config.txt for existing runs:
+
+```
+python scripts/backfill_run_configs.py --runs-dir runs
 ```
 
 By default, 10% of CIFAR-10 train is held out for validation and logged as

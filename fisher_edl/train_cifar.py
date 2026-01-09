@@ -18,6 +18,8 @@ class CifarTrainConfig:
     lr: float = 1e-3
     beta: float = 1.0
     gamma: float = 1.0
+    anneal_kl: bool = False
+    anneal_epochs: int = 10
     device: str = "cpu"
     log_every: int = 10
     use_wandb: bool = True
@@ -25,7 +27,7 @@ class CifarTrainConfig:
     wandb_run_name: Optional[str] = None
 
 
-def _train_epoch(model, loader, num_classes, cfg, optimizer):
+def _train_epoch(model, loader, num_classes, cfg, optimizer, epoch):
     model.train()
     epoch_loss = 0.0
     epoch_risk = 0.0
@@ -45,6 +47,12 @@ def _train_epoch(model, loader, num_classes, cfg, optimizer):
     correct = 0
     total = 0
 
+    if cfg.method == "edl" and cfg.anneal_kl:
+        progress = min(1.0, epoch / max(1, cfg.anneal_epochs))
+        kl_weight = cfg.beta * progress
+    else:
+        kl_weight = cfg.beta
+
     for images, labels in loader:
         images = images.to(cfg.device)
         labels = labels.to(cfg.device)
@@ -58,8 +66,8 @@ def _train_epoch(model, loader, num_classes, cfg, optimizer):
             epoch_lambda_max += stats["lambda_max"]
             epoch_fisher_trace += stats["fisher_trace"]
         else:
-            loss, stats = edl_mse_loss(logits, targets, kl_weight=cfg.beta)
-            epoch_weight += cfg.beta
+            loss, stats = edl_mse_loss(logits, targets, kl_weight=kl_weight)
+            epoch_weight += kl_weight
             epoch_lambda_min += float("nan")
             epoch_lambda_max += float("nan")
             epoch_fisher_trace += float("nan")
@@ -124,6 +132,7 @@ def _train_epoch(model, loader, num_classes, cfg, optimizer):
         "kl": mean_kl,
         "kl_weighted": mean_kl_weighted,
         "weight": mean_weight,
+        "kl_weight": kl_weight,
         "lambda_min": mean_lambda_min,
         "lambda_max": mean_lambda_max,
         "fisher_trace": mean_fisher_trace,
@@ -219,6 +228,10 @@ def train_cifar(
 
     if run_dir:
         os.makedirs(run_dir, exist_ok=True)
+        cfg_path = os.path.join(run_dir, "config.txt")
+        with open(cfg_path, "w") as f:
+            for key, value in cfg.__dict__.items():
+                f.write(f"{key}: {value}\n")
         csv_path = os.path.join(run_dir, "metrics.csv")
         csv_file = open(csv_path, "w", newline="")
         writer = csv.writer(csv_file)
@@ -240,7 +253,7 @@ def train_cifar(
         writer = None
 
     for epoch in range(1, cfg.epochs + 1):
-        train_stats = _train_epoch(model, train_loader, num_classes, cfg, optimizer)
+        train_stats = _train_epoch(model, train_loader, num_classes, cfg, optimizer, epoch)
         val_acc, val_unc, val_weight, val_scores = _eval_id(model, val_loader, cfg)
         if epoch % cfg.log_every == 0 or epoch == 1 or epoch == cfg.epochs:
             print(
@@ -260,6 +273,7 @@ def train_cifar(
                     "Loss/KL_weighted": train_stats["kl_weighted"],
                     "Metric/Fisher_Trace": train_stats["fisher_trace"],
                     "Metric/Lambda_Mean": train_stats["weight"],
+                    "Metric/KL_Weight": train_stats["kl_weight"],
                     "Metric/Lambda_Min": train_stats["lambda_min"],
                     "Metric/Lambda_Max": train_stats["lambda_max"],
                     "Uncertainty/Train_Mean": train_stats["uncertainty_mean"],

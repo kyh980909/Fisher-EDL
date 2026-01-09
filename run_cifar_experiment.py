@@ -15,6 +15,8 @@ def parse_args():
     parser.add_argument("--lr", type=float, default=1e-3)
     parser.add_argument("--beta", type=float, default=1.0)
     parser.add_argument("--gamma", type=float, default=1.0)
+    parser.add_argument("--anneal-kl", action="store_true", help="Enable KL annealing for EDL")
+    parser.add_argument("--anneal-epochs", type=int, default=10)
     parser.add_argument("--batch-size", type=int, default=128)
     parser.add_argument("--batch_size", dest="batch_size", type=int)
     parser.add_argument("--data-root", type=str, default="./data")
@@ -68,6 +70,8 @@ def main():
         lr=args.lr,
         beta=args.beta,
         gamma=args.gamma,
+        anneal_kl=args.anneal_kl,
+        anneal_epochs=args.anneal_epochs,
         device=device,
         use_wandb=args.wandb,
         wandb_project=args.wandb_project,

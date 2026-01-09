@@ -31,3 +31,26 @@ def compute_auroc(scores, labels):
     # Trapezoidal integration
     auroc = torch.trapz(tpr, fpr).item()
     return auroc
+
+
+def compute_fpr_at_tpr(scores, labels, tpr_target=0.95):
+    # labels: 1 for OOD, 0 for ID. scores higher => more OOD.
+    scores = scores.detach().cpu()
+    labels = labels.detach().cpu()
+    sorted_idx = torch.argsort(scores, descending=True)
+    labels = labels[sorted_idx]
+
+    pos = labels.sum().item()
+    neg = labels.numel() - pos
+    if pos == 0 or neg == 0:
+        return float("nan")
+
+    tps = torch.cumsum(labels, dim=0)
+    fps = torch.cumsum(1 - labels, dim=0)
+    tpr = tps / pos
+    fpr = fps / neg
+
+    idx = torch.searchsorted(tpr, torch.tensor(tpr_target), right=False)
+    if idx >= tpr.numel():
+        idx = tpr.numel() - 1
+    return fpr[idx].item()
