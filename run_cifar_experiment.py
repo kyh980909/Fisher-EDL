@@ -11,12 +11,17 @@ from fisher_edl.train_cifar import CifarTrainConfig, train_cifar
 def parse_args():
     parser = argparse.ArgumentParser(description="Fisher-EDL CIFAR experiments")
     parser.add_argument("--method", choices=["edl", "fisher"], default="fisher")
+    parser.add_argument("--edl-preset", choices=["vanilla", "strong"], default="vanilla")
     parser.add_argument("--epochs", type=int, default=100)
     parser.add_argument("--lr", type=float, default=1e-3)
     parser.add_argument("--beta", type=float, default=1.0)
     parser.add_argument("--gamma", type=float, default=1.0)
     parser.add_argument("--anneal-kl", action="store_true", help="Enable KL annealing for EDL")
     parser.add_argument("--anneal-epochs", type=int, default=10)
+    parser.add_argument("--optimizer", choices=["adam", "adamw"], default="adam")
+    parser.add_argument("--weight-decay", type=float, default=0.0)
+    parser.add_argument("--scheduler", choices=["none", "cosine"], default="none")
+    parser.add_argument("--warmup-epochs", type=int, default=0)
     parser.add_argument("--batch-size", type=int, default=128)
     parser.add_argument("--batch_size", dest="batch_size", type=int)
     parser.add_argument("--data-root", type=str, default="./data")
@@ -50,6 +55,19 @@ def main():
     )
     _ = test_transform
 
+    if args.method == "edl" and args.edl_preset == "strong":
+        args.backbone = "resnet18"
+        if not args.anneal_kl:
+            args.anneal_kl = True
+            args.anneal_epochs = 10
+        args.optimizer = "adamw"
+        if args.scheduler == "none":
+            args.scheduler = "cosine"
+        if args.warmup_epochs == 0:
+            args.warmup_epochs = 5
+        if args.weight_decay == 0.0:
+            args.weight_decay = 5e-4
+
     model = build_cifar_model(backbone=args.backbone, num_classes=10)
 
     if args.run_dir:
@@ -72,6 +90,10 @@ def main():
         gamma=args.gamma,
         anneal_kl=args.anneal_kl,
         anneal_epochs=args.anneal_epochs,
+        optimizer=args.optimizer,
+        weight_decay=args.weight_decay,
+        scheduler=args.scheduler,
+        warmup_epochs=args.warmup_epochs,
         device=device,
         use_wandb=args.wandb,
         wandb_project=args.wandb_project,

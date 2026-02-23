@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Optional
 
 import torch
+from tqdm import tqdm
 import torch.nn.functional as F
 
 from fisher_edl.cifar_data import one_hot
@@ -20,6 +21,10 @@ class CifarTrainConfig:
     gamma: float = 1.0
     anneal_kl: bool = False
     anneal_epochs: int = 10
+    optimizer: str = "adam"
+    weight_decay: float = 0.0
+    scheduler: str = "none"
+    warmup_epochs: int = 0
     device: str = "cpu"
     log_every: int = 10
     use_wandb: bool = True
@@ -53,7 +58,8 @@ def _train_epoch(model, loader, num_classes, cfg, optimizer, epoch):
     else:
         kl_weight = cfg.beta
 
-    for images, labels in loader:
+    progress = tqdm(loader, desc=f"Epoch {epoch:03d}", leave=False)
+    for images, labels in progress:
         images = images.to(cfg.device)
         labels = labels.to(cfg.device)
         targets = one_hot(labels, num_classes).to(cfg.device)
@@ -85,6 +91,7 @@ def _train_epoch(model, loader, num_classes, cfg, optimizer, epoch):
         epoch_risk += stats["risk"]
         epoch_kl += stats["kl"]
         epoch_kl_weighted += stats["kl_weighted"]
+        progress.set_postfix(loss=loss.item(), acc=correct / max(1, total))
 
         with torch.no_grad():
             preds = torch.argmax(F.softmax(logits, dim=1), dim=1)
@@ -203,7 +210,23 @@ def train_cifar(
     cfg: CifarTrainConfig,
     run_dir=None,
 ):
-    optimizer = torch.optim.Adam(model.parameters(), lr=cfg.lr)
+    if cfg.optimizer == "adamw":
+        optimizer = torch.optim.AdamW(
+            model.parameters(), lr=cfg.lr, weight_decay=cfg.weight_decay
+        )
+    else:
+        optimizer = torch.optim.Adam(model.parameters(), lr=cfg.lr)
+
+    if cfg.scheduler == "cosine":
+        def lr_lambda(epoch):
+            if epoch < cfg.warmup_epochs:
+                return float(epoch + 1) / max(1, cfg.warmup_epochs)
+            progress = (epoch - cfg.warmup_epochs) / max(1, cfg.epochs - cfg.warmup_epochs)
+            return 0.5 * (1.0 + torch.cos(torch.tensor(progress * 3.1415926535))).item()
+
+        scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lr_lambda)
+    else:
+        scheduler = None
     model.to(cfg.device)
 
     best_val_acc = -1.0
@@ -255,6 +278,8 @@ def train_cifar(
     for epoch in range(1, cfg.epochs + 1):
         train_stats = _train_epoch(model, train_loader, num_classes, cfg, optimizer, epoch)
         val_acc, val_unc, val_weight, val_scores = _eval_id(model, val_loader, cfg)
+        if scheduler:
+            scheduler.step()
         if epoch % cfg.log_every == 0 or epoch == 1 or epoch == cfg.epochs:
             print(
                 f"Epoch {epoch:03d} | loss={train_stats['loss']:.4f} "
@@ -285,6 +310,7 @@ def train_cifar(
                     "val_acc": val_acc,
                     "val_uncertainty": val_unc,
                     "val_fisher_weight": val_weight,
+                    "lr": optimizer.param_groups[0]["lr"],
                 }
             )
 

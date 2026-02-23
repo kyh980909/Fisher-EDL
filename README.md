@@ -16,6 +16,13 @@ python run_cifar_experiment.py --method edl --beta 1.0
 python run_cifar_experiment.py --method fisher --beta 1.0 --gamma 1.0
 ```
 
+EDL presets:
+
+```
+python run_cifar_experiment.py --method edl --edl-preset vanilla
+python run_cifar_experiment.py --method edl --edl-preset strong
+```
+
 The script logs CSV metrics to `runs/cifar_<method>_<timestamp>/metrics.csv`,
 including ID validation accuracy and uncertainty.
 
@@ -63,6 +70,12 @@ Hyperparameter sweep (grid):
 
 ```
 python run_cifar_sweep.py --method fisher --betas 1.0,0.3,0.1 --gammas 0.5,1.0,2.0
+```
+
+Seed sweep (beta=gamma=1.0):
+
+```
+python run_cifar_seeds.py --method both --seeds 1234,2345,3456
 ```
 
 W&B sweep (grid):
