@@ -1,4 +1,3 @@
-import math
 import torch
 import torch.nn.functional as F
 
@@ -64,13 +63,63 @@ def fisher_info_trace(alpha):
     return trace
 
 
-def fisher_weight(alpha, beta=1.0, gamma=1.0, eps=1e-6):
-    info = fisher_info_trace(alpha)
-    # Larger info -> smaller weight
-    return beta * torch.exp(-gamma * info).clamp_min(eps)
+def evidence_sum(alpha):
+    return torch.sum(alpha - 1.0, dim=1, keepdim=True)
 
 
-def fisher_edl_mse_loss(logits, targets, beta=1.0, gamma=1.0):
+def predictive_entropy(alpha, eps=1e-12):
+    probs = alpha / torch.sum(alpha, dim=1, keepdim=True)
+    return -torch.sum(probs * torch.log(probs.clamp_min(eps)), dim=1, keepdim=True)
+
+
+def info_measure(alpha, info_type="fisher"):
+    info_type = info_type.lower()
+    if info_type == "fisher":
+        return fisher_info_trace(alpha)
+    if info_type == "evidence":
+        # More evidence -> more information proxy.
+        return evidence_sum(alpha)
+    if info_type == "entropy":
+        # Lower entropy -> more information; flip sign to keep monotonicity.
+        return -predictive_entropy(alpha)
+    raise ValueError(f"Unknown info_type: {info_type}")
+
+
+def gate_weight(info, beta=1.0, gamma=1.0, gate_type="exp", eps=1e-6):
+    gate_type = gate_type.lower()
+    if gate_type == "exp":
+        weight = beta * torch.exp(-gamma * info)
+    elif gate_type == "inverse":
+        weight = beta / (1.0 + gamma * torch.relu(info))
+    elif gate_type == "sigmoid":
+        weight = beta * torch.sigmoid(-gamma * info)
+    else:
+        raise ValueError(f"Unknown gate_type: {gate_type}")
+    return weight.clamp_min(eps)
+
+
+def fisher_weight(
+    alpha,
+    beta=1.0,
+    gamma=1.0,
+    eps=1e-6,
+    info_type="fisher",
+    gate_type="exp",
+):
+    info = info_measure(alpha, info_type=info_type)
+    return gate_weight(info, beta=beta, gamma=gamma, gate_type=gate_type, eps=eps)
+
+
+def fisher_edl_mse_loss(
+    logits,
+    targets,
+    beta=1.0,
+    gamma=1.0,
+    info_type="fisher",
+    gate_type="exp",
+    detach_weight=False,
+    objective="risk_plus_kl",
+):
     evidence = F.softplus(logits)
     alpha = evidence + 1.0
 
@@ -81,18 +130,28 @@ def fisher_edl_mse_loss(logits, targets, beta=1.0, gamma=1.0):
     risk = mse + var
 
     kl = dirichlet_kl(alpha, targets.shape[1])
-    info = fisher_info_trace(alpha)
-    weight = fisher_weight(alpha, beta=beta, gamma=gamma)
+    info = info_measure(alpha, info_type=info_type)
+    weight = gate_weight(info, beta=beta, gamma=gamma, gate_type=gate_type)
+    if detach_weight:
+        weight = weight.detach()
     kl_weighted = weight * kl
-    total = risk + kl_weighted
+    if objective == "risk_plus_kl":
+        total = risk + kl_weighted
+    elif objective == "kl_only":
+        total = kl_weighted
+    else:
+        raise ValueError(f"Unknown objective: {objective}")
 
     return total.mean(), {
         "risk": risk.mean().item(),
         "kl": kl.mean().item(),
         "kl_weighted": kl_weighted.mean().item(),
         "weight": weight.mean().item(),
+        "weight_std": weight.std(unbiased=False).item(),
         "lambda_min": weight.min().item(),
         "lambda_max": weight.max().item(),
-        "fisher_trace": info.mean().item(),
+        "info": info.mean().item(),
+        "info_std": info.std(unbiased=False).item(),
+        "fisher_trace": fisher_info_trace(alpha).mean().item(),
         "evidence": evidence.mean().item(),
     }

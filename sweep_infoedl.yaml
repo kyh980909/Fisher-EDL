@@ -1,0 +1,17 @@
+program: run_cifar_experiment.py
+method: grid
+parameters:
+  beta:
+    values: [1.0, 0.5, 0.1, 0.05]
+  gamma:
+    values: [0.25, 0.5, 1.0, 2.0]
+  info-type:
+    values: [fisher]
+  gate-type:
+    values: [exp]
+  detach-weight:
+    values: [false]
+  objective:
+    values: [risk_plus_kl]
+  backbone:
+    values: [resnet18]
